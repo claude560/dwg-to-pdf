@@ -12,6 +12,7 @@ Requirements:
     - ODA File Converter installed (https://www.opendesign.com/guestfiles/oda_file_converter)
       -> used only to convert DWG to DXF (ODA does not export PDF directly).
     - pip install tkinterdnd2 pypdf ezdxf pymupdf
+    - fonts/iso3098.lff (di kem) : font net don de render chu nhanh (tuy chon).
 """
 import os
 import shutil
@@ -31,11 +32,24 @@ except ImportError:
     HAS_DND = False
 
 import ezdxf
+from ezdxf.fonts import fonts as ezdxf_fonts
 from ezdxf.addons.drawing import RenderContext, Frontend
 from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
 from ezdxf.addons.drawing.config import Configuration, ColorPolicy, BackgroundPolicy
 from ezdxf.addons.drawing.layout import Page, Margins, Settings, Units
 from pypdf import PdfReader, PdfWriter
+
+# Font net don (single-stroke) di kem tool. ezdxf KE NET font nay thay vi TO
+# duong vien glyph nhu font TTF -> render chu nhanh hon ~2.4 lan, file PDF nho hon.
+# Han che: font ISO 3098 khong co dau tieng Viet (so/chu Latin thi day du).
+FONT_DIR = Path(__file__).resolve().parent / "fonts"
+FAST_TEXT_FONT = "iso3098.lff"
+try:
+    if FONT_DIR.is_dir():
+        ezdxf_fonts.font_manager.scan_folder(FONT_DIR)
+    FAST_FONT_AVAILABLE = ezdxf_fonts.font_manager.has_font(FAST_TEXT_FONT)
+except Exception:
+    FAST_FONT_AVAILABLE = False
 
 PAPER_SIZES_MM = {
     "A0": (841, 1189),
@@ -127,13 +141,29 @@ RENDER_SETTINGS = Settings(
 )
 
 
-def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_mm: float, page_h_mm: float) -> None:
+def apply_fast_text_font(doc) -> None:
+    """Doi font cua tat ca text style sang font net don -> ezdxf KE NET thay vi TO,
+    render nhanh hon nhieu. Bo qua an toan neu khong co font net don."""
+    if not FAST_FONT_AVAILABLE:
+        return
+    for style in doc.styles:
+        try:
+            style.dxf.font = FAST_TEXT_FONT
+        except Exception:
+            pass
+
+
+def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_mm: float, page_h_mm: float,
+               fast_text: bool = True) -> None:
     doc = ezdxf.readfile(str(dxf_path))
     msp = doc.modelspace()
 
     # Bo cac doi tuong POINT (AutoCAD hien rat nho, nhung render thanh cham tron dam).
     for point in msp.query("POINT"):
         msp.delete_entity(point)
+
+    if fast_text:
+        apply_fast_text_font(doc)
 
     backend = PyMuPdfBackend()
     ctx = RenderContext(doc)
@@ -146,16 +176,16 @@ def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_mm: float, page_h_mm: floa
 
 def _render_worker(args) -> tuple[str, str | None]:
     """Worker chay trong process rieng (de render song song nhieu loi CPU)."""
-    dxf_path, pdf_path, page_w_mm, page_h_mm = args
+    dxf_path, pdf_path, page_w_mm, page_h_mm, fast_text = args
     try:
-        dxf_to_pdf(Path(dxf_path), Path(pdf_path), page_w_mm, page_h_mm)
+        dxf_to_pdf(Path(dxf_path), Path(pdf_path), page_w_mm, page_h_mm, fast_text)
         return pdf_path, None
     except Exception as exc:
         return pdf_path, str(exc)
 
 
 def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool,
-                  log) -> Path:
+                  log, fast_text: bool = True) -> Path:
     oda_path = find_oda_converter()
     top_folder = top_folder.resolve()
     dwg_files = collect_dwg_files(top_folder)
@@ -170,7 +200,8 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
         t0 = time.time()
         dxf_dir = work_dir / "dxf"
         convert_folder_to_dxf(top_folder, dxf_dir, oda_path)
-        log(f"  ODA xong sau {time.time() - t0:.1f}s. Dang render PDF song song...")
+        chu_mode = "net don" if (fast_text and FAST_FONT_AVAILABLE) else "TTF (to)"
+        log(f"  ODA xong sau {time.time() - t0:.1f}s. Render PDF song song (chu: {chu_mode})...")
 
         # Chuan bi danh sach cong viec render (giu thu tu file).
         jobs = []
@@ -181,7 +212,7 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
                 log(f"  Bo qua (khong tao duoc DXF): {rel}")
                 continue
             pdf_path = work_dir / f"{len(jobs):05d}_{dwg.stem}.pdf"
-            jobs.append((str(dxf_path), str(pdf_path), page_w_mm, page_h_mm))
+            jobs.append((str(dxf_path), str(pdf_path), page_w_mm, page_h_mm, fast_text))
 
         # Render song song tren nhieu loi CPU.
         t1 = time.time()
@@ -217,7 +248,7 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
 
 
 class SettingsDialog(tk.Toplevel):
-    def __init__(self, parent):
+    def __init__(self, parent, paper="A3", landscape=True, fast_text=True):
         super().__init__(parent)
         self.title("Tuy chon in")
         self.resizable(False, False)
@@ -225,21 +256,32 @@ class SettingsDialog(tk.Toplevel):
         self.grab_set()
 
         ttk.Label(self, text="Kho giay:").grid(row=0, column=0, padx=10, pady=10, sticky="w")
-        self.paper_var = tk.StringVar(value="A3")
+        self.paper_var = tk.StringVar(value=paper)
         ttk.Combobox(
             self, textvariable=self.paper_var, values=list(PAPER_SIZES_MM.keys()),
             state="readonly", width=12,
-        ).grid(row=0, column=1, padx=10, pady=10)
+        ).grid(row=0, column=1, padx=10, pady=10, sticky="w")
 
         ttk.Label(self, text="Huong in:").grid(row=1, column=0, padx=10, pady=10, sticky="w")
-        self.orient_var = tk.StringVar(value="Ngang")
+        self.orient_var = tk.StringVar(value="Ngang" if landscape else "Doc")
         frame = ttk.Frame(self)
         frame.grid(row=1, column=1, padx=10, pady=10, sticky="w")
         ttk.Radiobutton(frame, text="Doc", variable=self.orient_var, value="Doc").pack(side="left")
         ttk.Radiobutton(frame, text="Ngang", variable=self.orient_var, value="Ngang").pack(side="left")
 
+        self.fast_var = tk.BooleanVar(value=fast_text)
+        chk = ttk.Checkbutton(
+            self, variable=self.fast_var,
+            text="Chu net don (nhanh hon, nhung mat dau tieng Viet)",
+        )
+        chk.grid(row=2, column=0, columnspan=2, padx=10, pady=(0, 4), sticky="w")
+        if not FAST_FONT_AVAILABLE:
+            chk.state(["disabled"])
+            ttk.Label(self, text="(khong tim thay font net don 'fonts/iso3098.lff')",
+                      foreground="#a00").grid(row=3, column=0, columnspan=2, padx=10, sticky="w")
+
         btns = ttk.Frame(self)
-        btns.grid(row=2, column=0, columnspan=2, pady=10)
+        btns.grid(row=4, column=0, columnspan=2, pady=10)
         ttk.Button(btns, text="OK", command=self._ok).pack(side="left", padx=5)
         ttk.Button(btns, text="Huy", command=self.destroy).pack(side="left", padx=5)
 
@@ -247,7 +289,8 @@ class SettingsDialog(tk.Toplevel):
         self.wait_window(self)
 
     def _ok(self):
-        self.result = (self.paper_var.get(), self.orient_var.get() == "Ngang")
+        self.result = (self.paper_var.get(), self.orient_var.get() == "Ngang",
+                       bool(self.fast_var.get()))
         self.destroy()
 
 
@@ -258,6 +301,7 @@ class App:
         self.root.geometry("560x420")
         self.paper = "A3"
         self.landscape = True
+        self.fast_text = FAST_FONT_AVAILABLE
         self.output_dir = None
 
         top = ttk.Frame(root, padding=10)
@@ -290,12 +334,14 @@ class App:
         self.log_box.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     def _settings_text(self) -> str:
-        return f"Kho giay: {self.paper}  |  Huong: {'Ngang' if self.landscape else 'Doc'}"
+        chu = "net don" if self.fast_text else "TTF"
+        return (f"Kho giay: {self.paper}  |  Huong: {'Ngang' if self.landscape else 'Doc'}"
+                f"  |  Chu: {chu}")
 
     def open_settings(self):
-        dlg = SettingsDialog(self.root)
+        dlg = SettingsDialog(self.root, self.paper, self.landscape, self.fast_text)
         if dlg.result:
-            self.paper, self.landscape = dlg.result
+            self.paper, self.landscape, self.fast_text = dlg.result
             self.settings_label.config(text=self._settings_text())
 
     def choose_output(self):
@@ -333,7 +379,8 @@ class App:
             out_dir = self.output_dir or folder
             self.log(f"Bat dau xu ly thu muc: {folder.name}")
             try:
-                result = merge_folder(folder, out_dir, self.paper, self.landscape, self.log)
+                result = merge_folder(folder, out_dir, self.paper, self.landscape,
+                                      self.log, self.fast_text)
                 self.log(f"Hoan tat: {result}")
             except Exception as exc:
                 self.log(f"LOI ({folder.name}): {exc}")
