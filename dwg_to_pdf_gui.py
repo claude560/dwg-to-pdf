@@ -20,7 +20,7 @@ import tempfile
 import threading
 import time
 import tkinter as tk
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -74,15 +74,40 @@ def collect_dwg_files(root_folder: Path) -> list[Path]:
     return sorted(seen)
 
 
-def convert_folder_to_dxf(top_folder: Path, output_dir: Path, oda_path: str) -> None:
-    """Goi ODA File Converter MOT LAN cho ca thu muc (recurse=1) thay vi tung file,
-    vi moi lan khoi dong tien trinh ODA ton vai giay -> goi tung file rat cham."""
-    output_dir.mkdir(parents=True, exist_ok=True)
-    # Audit=0: bo buoc kiem tra/sua loi tung file -> ODA chay nhanh hon dang ke.
-    cmd = [oda_path, str(top_folder), str(output_dir), "ACAD2018", "DXF", "1", "0", "*.DWG"]
+def _run_oda(oda_path: str, in_dir: Path, out_dir: Path, recurse: str) -> str | None:
+    """Chay 1 tien trinh ODA. Audit=0 de nhanh hon. Tra ve thong bao loi (neu co)."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    cmd = [oda_path, str(in_dir), str(out_dir), "ACAD2018", "DXF", recurse, "0", "*.DWG"]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise RuntimeError(f"Loi convert thu muc {top_folder.name}: {result.stderr or result.stdout}")
+        return result.stderr or result.stdout
+    return None
+
+
+def convert_folder_to_dxf(top_folder: Path, output_dir: Path, oda_path: str) -> None:
+    """Convert ca cay thu muc DWG -> DXF.
+
+    ODA chi chay 1 luong/tien trinh, nen ta chia theo cac thu muc con cap 2 va
+    chay NHIEU tien trinh ODA SONG SONG -> tan dung nhieu loi CPU, nhanh hon
+    nhieu so voi mot lenh recurse duy nhat."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    child_dirs = [d for d in top_folder.iterdir() if d.is_dir()]
+
+    # Moi tac vu: (thu_muc_vao, thu_muc_ra, co_recurse)
+    tasks = [(top_folder, output_dir, "0")]  # file DWG nam truc tiep trong thu muc cap 1
+    for child in child_dirs:
+        tasks.append((child, output_dir / child.name, "1"))
+
+    workers = max(1, min(len(tasks), (os.cpu_count() or 2)))
+    errors = []
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futures = {ex.submit(_run_oda, oda_path, i, o, r): i for i, o, r in tasks}
+        for fut in as_completed(futures):
+            err = fut.result()
+            if err:
+                errors.append(f"{futures[fut].name}: {err.strip()}")
+    if errors and not any(output_dir.rglob("*.dxf")):
+        raise RuntimeError("Loi convert DWG sang DXF:\n" + "\n".join(errors))
 
 
 MARGIN_MM = 3
@@ -141,7 +166,7 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
     work_dir = Path(tempfile.mkdtemp())
     writer = PdfWriter()
     try:
-        log(f"  Dang convert {len(dwg_files)} file DWG sang DXF (ODA, mot lan)...")
+        log(f"  Dang convert {len(dwg_files)} file DWG sang DXF (ODA song song)...")
         t0 = time.time()
         dxf_dir = work_dir / "dxf"
         convert_folder_to_dxf(top_folder, dxf_dir, oda_path)
@@ -304,7 +329,8 @@ class App:
 
     def _process_folders_thread(self, folders: list[Path]):
         for folder in folders:
-            out_dir = self.output_dir or folder.parent
+            # Mac dinh luu PDF gop NGAY TRONG thu muc cap 1 do.
+            out_dir = self.output_dir or folder
             self.log(f"Bat dau xu ly thu muc: {folder.name}")
             try:
                 result = merge_folder(folder, out_dir, self.paper, self.landscape, self.log)
