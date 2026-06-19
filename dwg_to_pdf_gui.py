@@ -184,8 +184,13 @@ def _render_worker(args) -> tuple[str, str | None]:
         return pdf_path, str(exc)
 
 
-def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool,
-                  log, fast_text: bool = True) -> Path:
+def merge_folder(top_folder: Path, output_dir: Path | None, paper: str, landscape: bool,
+                  log, fast_text: bool = True) -> list[Path]:
+    """Gop PDF theo TUNG thu muc chua file DWG.
+
+    Moi thu muc (cap 2, cap 3...) co chua truc tiep file .dwg se tao 1 file
+    "<ten thu muc> tong hop.pdf" nam NGAY TRONG thu muc do.
+    Neu output_dir duoc chon, tat ca file gop se duoc luu vao output_dir thay the."""
     oda_path = find_oda_converter()
     top_folder = top_folder.resolve()
     dwg_files = collect_dwg_files(top_folder)
@@ -194,7 +199,6 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
 
     page_w_mm, page_h_mm = paper_size_mm(paper, landscape)
     work_dir = Path(tempfile.mkdtemp())
-    writer = PdfWriter()
     try:
         log(f"  Dang convert {len(dwg_files)} file DWG sang DXF (ODA song song)...")
         t0 = time.time()
@@ -203,8 +207,9 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
         chu_mode = "net don" if (fast_text and FAST_FONT_AVAILABLE) else "TTF (to)"
         log(f"  ODA xong sau {time.time() - t0:.1f}s. Render PDF song song (chu: {chu_mode})...")
 
-        # Chuan bi danh sach cong viec render (giu thu tu file).
+        # Chuan bi cong viec render; giu lai dwg goc de gom theo thu muc.
         jobs = []
+        job_dwgs = []
         for dwg in dwg_files:
             rel = dwg.relative_to(top_folder)
             dxf_path = dxf_dir / rel.with_suffix(".dxf")
@@ -213,11 +218,12 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
                 continue
             pdf_path = work_dir / f"{len(jobs):05d}_{dwg.stem}.pdf"
             jobs.append((str(dxf_path), str(pdf_path), page_w_mm, page_h_mm, fast_text))
+            job_dwgs.append(dwg)
 
         # Render song song tren nhieu loi CPU.
         t1 = time.time()
         workers = max(1, min(len(jobs), (os.cpu_count() or 2)))
-        results = {}
+        ok_pdfs = set()
         with ProcessPoolExecutor(max_workers=workers) as ex:
             done = 0
             for pdf_path, err in ex.map(_render_worker, jobs):
@@ -225,24 +231,33 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
                 if err:
                     log(f"  Loi render {Path(pdf_path).name}: {err}")
                 else:
-                    results[pdf_path] = True
+                    ok_pdfs.add(pdf_path)
                 if done % 10 == 0 or done == len(jobs):
                     log(f"  Da render {done}/{len(jobs)} file...")
-        log(f"  Render xong sau {time.time() - t1:.1f}s. Dang gop PDF...")
+        log(f"  Render xong sau {time.time() - t1:.1f}s. Dang gop PDF theo tung thu muc...")
 
-        # Gop theo dung thu tu cong viec ban dau.
-        for job in jobs:
+        # Gom cac trang theo thu muc chua file DWG (giu thu tu file trong moi thu muc).
+        groups: dict[Path, list[str]] = {}
+        for job, dwg in zip(jobs, job_dwgs):
             pdf_path = job[1]
-            if pdf_path in results:
+            if pdf_path in ok_pdfs:
+                groups.setdefault(dwg.parent, []).append(pdf_path)
+
+        out_paths = []
+        for folder, pdf_list in groups.items():
+            writer = PdfWriter()
+            for pdf_path in pdf_list:
                 reader = PdfReader(pdf_path)
                 for page in reader.pages:
                     writer.add_page(page)
-
-        output_dir.mkdir(parents=True, exist_ok=True)
-        out_path = output_dir / f"{top_folder.name} tong hop.pdf"
-        with open(out_path, "wb") as f:
-            writer.write(f)
-        return out_path
+            dest_dir = output_dir if output_dir else folder
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            out_path = dest_dir / f"{folder.name} tong hop.pdf"
+            with open(out_path, "wb") as f:
+                writer.write(f)
+            out_paths.append(out_path)
+            log(f"  Da tao: {out_path}")
+        return out_paths
     finally:
         shutil.rmtree(work_dir, ignore_errors=True)
 
@@ -313,7 +328,7 @@ class App:
         out_frame = ttk.Frame(root, padding=(10, 0))
         out_frame.pack(fill="x")
         ttk.Button(out_frame, text="Chon thu muc xuat PDF...", command=self.choose_output).pack(side="left")
-        self.output_label = ttk.Label(out_frame, text="(chua chon - se luu cung cap voi thu muc nguon)")
+        self.output_label = ttk.Label(out_frame, text="(chua chon - moi file gop nam trong thu muc chua DWG)")
         self.output_label.pack(side="left", padx=10)
 
         self.drop_zone = tk.Label(
@@ -375,13 +390,12 @@ class App:
 
     def _process_folders_thread(self, folders: list[Path]):
         for folder in folders:
-            # Mac dinh luu PDF gop NGAY TRONG thu muc cap 1 do.
-            out_dir = self.output_dir or folder
+            # output_dir = None -> moi file gop nam NGAY TRONG thu muc chua DWG (cap 2, 3...).
             self.log(f"Bat dau xu ly thu muc: {folder.name}")
             try:
-                result = merge_folder(folder, out_dir, self.paper, self.landscape,
-                                      self.log, self.fast_text)
-                self.log(f"Hoan tat: {result}")
+                results = merge_folder(folder, self.output_dir, self.paper, self.landscape,
+                                       self.log, self.fast_text)
+                self.log(f"Hoan tat {len(results)} file gop trong '{folder.name}'.")
             except Exception as exc:
                 self.log(f"LOI ({folder.name}): {exc}")
         self.log("---- Xong ----")
