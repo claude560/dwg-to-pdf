@@ -13,7 +13,6 @@ EXCLUDES = [
     "pandas",
     "PyQt5", "PyQt6", "PySide2", "PySide6",
     "IPython", "jupyter",
-    "test", "unittest",
     "tkinter.test",
     "PIL.ImageQt",
 ]
