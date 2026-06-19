@@ -28,11 +28,13 @@ except ImportError:
     HAS_DND = False
 
 import ezdxf
+from ezdxf import bbox
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from ezdxf.addons.drawing import RenderContext, Frontend
 from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+from ezdxf.addons.drawing.config import Configuration, ColorPolicy, BackgroundPolicy
 from pypdf import PdfReader, PdfWriter
 
 PAPER_SIZES_MM = {
@@ -92,15 +94,33 @@ def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_in: float, page_h_in: floa
     msp = doc.modelspace()
 
     fig = plt.figure(figsize=(page_w_in, page_h_in))
-    ax = fig.add_axes([0.02, 0.02, 0.96, 0.96])
+    # Axes fills the entire page so the drawing fits to the paper edges.
+    ax = fig.add_axes([0, 0, 1, 1])
     ax.set_aspect("equal")
     ax.axis("off")
 
+    # In trang den: ve tat ca doi tuong mau den tren nen trang.
+    cfg = Configuration(
+        color_policy=ColorPolicy.BLACK,
+        background_policy=BackgroundPolicy.WHITE,
+    )
     ctx = RenderContext(doc)
     backend = MatplotlibBackend(ax)
-    Frontend(ctx, backend).draw_layout(msp, finalize=True)
+    Frontend(ctx, backend, config=cfg).draw_layout(msp, finalize=True)
 
-    fig.savefig(str(pdf_path))
+    # Fit ban ve kin kho giay theo gioi han thuc te cua ban ve.
+    try:
+        extents = bbox.extents(msp)
+        if extents.has_data:
+            min_x, min_y = extents.extmin.x, extents.extmin.y
+            max_x, max_y = extents.extmax.x, extents.extmax.y
+            ax.set_xlim(min_x, max_x)
+            ax.set_ylim(min_y, max_y)
+    except Exception:
+        pass
+    ax.margins(0)
+
+    fig.savefig(str(pdf_path), facecolor="white")
     plt.close(fig)
 
 
