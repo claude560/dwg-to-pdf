@@ -17,6 +17,7 @@ Requirements:
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -42,7 +43,11 @@ from pypdf import PdfReader, PdfWriter
 # Font net don (single-stroke) di kem tool. ezdxf KE NET font nay thay vi TO
 # duong vien glyph nhu font TTF -> render chu nhanh hon ~2.4 lan, file PDF nho hon.
 # Han che: font ISO 3098 khong co dau tieng Viet (so/chu Latin thi day du).
-FONT_DIR = Path(__file__).resolve().parent / "fonts"
+if getattr(sys, "frozen", False):
+    BASE_DIR = Path(sys._MEIPASS)
+else:
+    BASE_DIR = Path(__file__).resolve().parent
+FONT_DIR = BASE_DIR / "fonts"
 FAST_TEXT_FONT = "iso3098.lff"
 try:
     if FONT_DIR.is_dir():
@@ -408,4 +413,6 @@ def main():
 
 
 if __name__ == "__main__":
+    import multiprocessing
+    multiprocessing.freeze_support()
     main()
