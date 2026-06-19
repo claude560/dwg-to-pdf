@@ -1,2 +1,4 @@
 tkinterdnd2
 pypdf
+ezdxf
+matplotlib

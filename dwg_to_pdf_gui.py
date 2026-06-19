@@ -10,11 +10,11 @@ Workflow:
 
 Requirements:
     - ODA File Converter installed (https://www.opendesign.com/guestfiles/oda_file_converter)
-    - pip install tkinterdnd2 pypdf
+      -> used only to convert DWG to DXF (ODA does not export PDF directly).
+    - pip install tkinterdnd2 pypdf ezdxf matplotlib
 """
 import shutil
 import subprocess
-import sys
 import tempfile
 import threading
 import tkinter as tk
@@ -27,7 +27,13 @@ try:
 except ImportError:
     HAS_DND = False
 
-from pypdf import PdfReader, PdfWriter, Transformation
+import ezdxf
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+from ezdxf.addons.drawing import RenderContext, Frontend
+from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+from pypdf import PdfReader, PdfWriter
 
 PAPER_SIZES_MM = {
     "A0": (841, 1189),
@@ -37,17 +43,17 @@ PAPER_SIZES_MM = {
     "A4": (210, 297),
     "Letter": (215.9, 279.4),
 }
-MM_TO_PT = 72 / 25.4
+MM_TO_IN = 1 / 25.4
 
 
-def paper_size_points(name: str, landscape: bool) -> tuple[float, float]:
+def paper_size_inches(name: str, landscape: bool) -> tuple[float, float]:
     w_mm, h_mm = PAPER_SIZES_MM[name]
-    w_pt, h_pt = w_mm * MM_TO_PT, h_mm * MM_TO_PT
+    w_in, h_in = w_mm * MM_TO_IN, h_mm * MM_TO_IN
     if landscape:
-        w_pt, h_pt = max(w_pt, h_pt), min(w_pt, h_pt)
+        w_in, h_in = max(w_in, h_in), min(w_in, h_in)
     else:
-        w_pt, h_pt = min(w_pt, h_pt), max(w_pt, h_pt)
-    return w_pt, h_pt
+        w_in, h_in = min(w_in, h_in), max(w_in, h_in)
+    return w_in, h_in
 
 
 def find_oda_converter() -> str:
@@ -66,31 +72,36 @@ def collect_dwg_files(root_folder: Path) -> list[Path]:
         sorted(p for p in root_folder.rglob("*.DWG") if p.is_file())
 
 
-def convert_dwg_to_pdf(dwg_path: Path, output_dir: Path, oda_path: str) -> Path:
+def convert_dwg_to_dxf(dwg_path: Path, output_dir: Path, oda_path: str) -> Path:
     src_dir = Path(tempfile.mkdtemp())
     shutil.copy(dwg_path, src_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [oda_path, str(src_dir), str(output_dir), "ACAD2018", "PDF", "0", "1", "*.DWG"]
+    cmd = [oda_path, str(src_dir), str(output_dir), "ACAD2018", "DXF", "0", "1", "*.DWG"]
     result = subprocess.run(cmd, capture_output=True, text=True)
     shutil.rmtree(src_dir, ignore_errors=True)
     if result.returncode != 0:
         raise RuntimeError(f"Loi convert {dwg_path.name}: {result.stderr or result.stdout}")
-    pdf_path = output_dir / (dwg_path.stem + ".pdf")
-    if not pdf_path.exists():
-        raise RuntimeError(f"Khong tao duoc PDF cho {dwg_path.name}")
-    return pdf_path
+    dxf_path = output_dir / (dwg_path.stem + ".dxf")
+    if not dxf_path.exists():
+        raise RuntimeError(f"Khong tao duoc DXF cho {dwg_path.name}")
+    return dxf_path
 
 
-def normalize_page(reader_page, target_w: float, target_h: float):
-    src_w = float(reader_page.mediabox.width)
-    src_h = float(reader_page.mediabox.height)
-    scale = min(target_w / src_w, target_h / src_h)
-    tx = (target_w - src_w * scale) / 2
-    ty = (target_h - src_h * scale) / 2
-    reader_page.add_transformation(Transformation().scale(scale, scale).translate(tx, ty))
-    reader_page.mediabox.lower_left = (0, 0)
-    reader_page.mediabox.upper_right = (target_w, target_h)
-    return reader_page
+def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_in: float, page_h_in: float) -> None:
+    doc = ezdxf.readfile(str(dxf_path))
+    msp = doc.modelspace()
+
+    fig = plt.figure(figsize=(page_w_in, page_h_in))
+    ax = fig.add_axes([0.02, 0.02, 0.96, 0.96])
+    ax.set_aspect("equal")
+    ax.axis("off")
+
+    ctx = RenderContext(doc)
+    backend = MatplotlibBackend(ax)
+    Frontend(ctx, backend).draw_layout(msp, finalize=True)
+
+    fig.savefig(str(pdf_path))
+    plt.close(fig)
 
 
 def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool,
@@ -100,16 +111,18 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
     if not dwg_files:
         raise RuntimeError(f"Khong co file DWG trong '{top_folder.name}'")
 
-    target_w, target_h = paper_size_points(paper, landscape)
+    page_w_in, page_h_in = paper_size_inches(paper, landscape)
     work_dir = Path(tempfile.mkdtemp())
     writer = PdfWriter()
     try:
         for dwg in dwg_files:
             log(f"  Dang convert: {dwg.relative_to(top_folder)}")
-            pdf_path = convert_dwg_to_pdf(dwg, work_dir, oda_path)
+            dxf_path = convert_dwg_to_dxf(dwg, work_dir, oda_path)
+            pdf_path = work_dir / (dwg.stem + ".pdf")
+            dxf_to_pdf(dxf_path, pdf_path, page_w_in, page_h_in)
             reader = PdfReader(str(pdf_path))
             for page in reader.pages:
-                writer.add_page(normalize_page(page, target_w, target_h))
+                writer.add_page(page)
 
         output_dir.mkdir(parents=True, exist_ok=True)
         out_path = output_dir / f"{top_folder.name} tong hop.pdf"
