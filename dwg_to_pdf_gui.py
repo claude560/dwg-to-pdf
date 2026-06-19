@@ -13,11 +13,14 @@ Requirements:
       -> used only to convert DWG to DXF (ODA does not export PDF directly).
     - pip install tkinterdnd2 pypdf ezdxf pymupdf
 """
+import os
 import shutil
 import subprocess
 import tempfile
 import threading
+import time
 import tkinter as tk
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
@@ -75,7 +78,8 @@ def convert_folder_to_dxf(top_folder: Path, output_dir: Path, oda_path: str) -> 
     """Goi ODA File Converter MOT LAN cho ca thu muc (recurse=1) thay vi tung file,
     vi moi lan khoi dong tien trinh ODA ton vai giay -> goi tung file rat cham."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [oda_path, str(top_folder), str(output_dir), "ACAD2018", "DXF", "1", "1", "*.DWG"]
+    # Audit=0: bo buoc kiem tra/sua loi tung file -> ODA chay nhanh hon dang ke.
+    cmd = [oda_path, str(top_folder), str(output_dir), "ACAD2018", "DXF", "1", "0", "*.DWG"]
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError(f"Loi convert thu muc {top_folder.name}: {result.stderr or result.stdout}")
@@ -115,6 +119,16 @@ def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_mm: float, page_h_mm: floa
     Path(pdf_path).write_bytes(pdf_bytes)
 
 
+def _render_worker(args) -> tuple[str, str | None]:
+    """Worker chay trong process rieng (de render song song nhieu loi CPU)."""
+    dxf_path, pdf_path, page_w_mm, page_h_mm = args
+    try:
+        dxf_to_pdf(Path(dxf_path), Path(pdf_path), page_w_mm, page_h_mm)
+        return pdf_path, None
+    except Exception as exc:
+        return pdf_path, str(exc)
+
+
 def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool,
                   log) -> Path:
     oda_path = find_oda_converter()
@@ -128,21 +142,45 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
     writer = PdfWriter()
     try:
         log(f"  Dang convert {len(dwg_files)} file DWG sang DXF (ODA, mot lan)...")
+        t0 = time.time()
         dxf_dir = work_dir / "dxf"
         convert_folder_to_dxf(top_folder, dxf_dir, oda_path)
+        log(f"  ODA xong sau {time.time() - t0:.1f}s. Dang render PDF song song...")
 
+        # Chuan bi danh sach cong viec render (giu thu tu file).
+        jobs = []
         for dwg in dwg_files:
             rel = dwg.relative_to(top_folder)
             dxf_path = dxf_dir / rel.with_suffix(".dxf")
             if not dxf_path.exists():
                 log(f"  Bo qua (khong tao duoc DXF): {rel}")
                 continue
-            log(f"  Dang render PDF: {rel}")
-            pdf_path = work_dir / (dwg.stem + ".pdf")
-            dxf_to_pdf(dxf_path, pdf_path, page_w_mm, page_h_mm)
-            reader = PdfReader(str(pdf_path))
-            for page in reader.pages:
-                writer.add_page(page)
+            pdf_path = work_dir / f"{len(jobs):05d}_{dwg.stem}.pdf"
+            jobs.append((str(dxf_path), str(pdf_path), page_w_mm, page_h_mm))
+
+        # Render song song tren nhieu loi CPU.
+        t1 = time.time()
+        workers = max(1, min(len(jobs), (os.cpu_count() or 2)))
+        results = {}
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            done = 0
+            for pdf_path, err in ex.map(_render_worker, jobs):
+                done += 1
+                if err:
+                    log(f"  Loi render {Path(pdf_path).name}: {err}")
+                else:
+                    results[pdf_path] = True
+                if done % 10 == 0 or done == len(jobs):
+                    log(f"  Da render {done}/{len(jobs)} file...")
+        log(f"  Render xong sau {time.time() - t1:.1f}s. Dang gop PDF...")
+
+        # Gop theo dung thu tu cong viec ban dau.
+        for job in jobs:
+            pdf_path = job[1]
+            if pdf_path in results:
+                reader = PdfReader(pdf_path)
+                for page in reader.pages:
+                    writer.add_page(page)
 
         output_dir.mkdir(parents=True, exist_ok=True)
         out_path = output_dir / f"{top_folder.name} tong hop.pdf"
