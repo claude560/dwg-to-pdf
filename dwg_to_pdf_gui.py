@@ -97,6 +97,10 @@ def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_in: float, page_h_in: floa
     doc = ezdxf.readfile(str(dxf_path))
     msp = doc.modelspace()
 
+    # Bo cac doi tuong POINT (AutoCAD hien rat nho, nhung render thanh cham tron dam).
+    for point in msp.query("POINT"):
+        msp.delete_entity(point)
+
     fig = plt.figure(figsize=(page_w_in, page_h_in))
     # Chua mep giay MARGIN_MM o ca 4 canh.
     margin_x = (MARGIN_MM * MM_TO_IN) / page_w_in
