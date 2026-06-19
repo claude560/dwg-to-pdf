@@ -89,20 +89,28 @@ def convert_dwg_to_dxf(dwg_path: Path, output_dir: Path, oda_path: str) -> Path:
     return dxf_path
 
 
+MARGIN_MM = 3
+LINEWEIGHT_SCALING = 0.4
+
+
 def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_in: float, page_h_in: float) -> None:
     doc = ezdxf.readfile(str(dxf_path))
     msp = doc.modelspace()
 
     fig = plt.figure(figsize=(page_w_in, page_h_in))
-    # Axes fills the entire page so the drawing fits to the paper edges.
-    ax = fig.add_axes([0, 0, 1, 1])
+    # Chua mep giay MARGIN_MM o ca 4 canh.
+    margin_x = (MARGIN_MM * MM_TO_IN) / page_w_in
+    margin_y = (MARGIN_MM * MM_TO_IN) / page_h_in
+    ax = fig.add_axes([margin_x, margin_y, 1 - 2 * margin_x, 1 - 2 * margin_y])
     ax.set_aspect("equal")
     ax.axis("off")
 
-    # In trang den: ve tat ca doi tuong mau den tren nen trang.
+    # In trang den, net ve manh hon (dac biet net kich thuoc).
     cfg = Configuration(
         color_policy=ColorPolicy.BLACK,
         background_policy=BackgroundPolicy.WHITE,
+        lineweight_scaling=LINEWEIGHT_SCALING,
+        min_lineweight=0.1,
     )
     ctx = RenderContext(doc)
     backend = MatplotlibBackend(ax)
