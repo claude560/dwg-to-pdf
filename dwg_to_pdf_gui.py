@@ -70,23 +70,20 @@ def find_oda_converter() -> str:
 
 
 def collect_dwg_files(root_folder: Path) -> list[Path]:
-    return sorted(p for p in root_folder.rglob("*.dwg") if p.is_file()) + \
-        sorted(p for p in root_folder.rglob("*.DWG") if p.is_file())
+    # set() de tranh trung file tren he thong khong phan biet hoa/thuong (Windows).
+    seen = {p.resolve() for p in root_folder.rglob("*.dwg") if p.is_file()}
+    seen |= {p.resolve() for p in root_folder.rglob("*.DWG") if p.is_file()}
+    return sorted(seen)
 
 
-def convert_dwg_to_dxf(dwg_path: Path, output_dir: Path, oda_path: str) -> Path:
-    src_dir = Path(tempfile.mkdtemp())
-    shutil.copy(dwg_path, src_dir)
+def convert_folder_to_dxf(top_folder: Path, output_dir: Path, oda_path: str) -> None:
+    """Goi ODA File Converter MOT LAN cho ca thu muc (recurse=1) thay vi tung file,
+    vi moi lan khoi dong tien trinh ODA ton vai giay -> goi tung file rat cham."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    cmd = [oda_path, str(src_dir), str(output_dir), "ACAD2018", "DXF", "0", "1", "*.DWG"]
+    cmd = [oda_path, str(top_folder), str(output_dir), "ACAD2018", "DXF", "1", "1", "*.DWG"]
     result = subprocess.run(cmd, capture_output=True, text=True)
-    shutil.rmtree(src_dir, ignore_errors=True)
     if result.returncode != 0:
-        raise RuntimeError(f"Loi convert {dwg_path.name}: {result.stderr or result.stdout}")
-    dxf_path = output_dir / (dwg_path.stem + ".dxf")
-    if not dxf_path.exists():
-        raise RuntimeError(f"Khong tao duoc DXF cho {dwg_path.name}")
-    return dxf_path
+        raise RuntimeError(f"Loi convert thu muc {top_folder.name}: {result.stderr or result.stdout}")
 
 
 MARGIN_MM = 3
@@ -115,6 +112,8 @@ def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_in: float, page_h_in: floa
         background_policy=BackgroundPolicy.WHITE,
         lineweight_scaling=LINEWEIGHT_SCALING,
         min_lineweight=0.1,
+        circle_approximation_count=32,
+        max_flattening_distance=0.1,
     )
     ctx = RenderContext(doc)
     backend = MatplotlibBackend(ax)
@@ -139,6 +138,7 @@ def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_in: float, page_h_in: floa
 def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool,
                   log) -> Path:
     oda_path = find_oda_converter()
+    top_folder = top_folder.resolve()
     dwg_files = collect_dwg_files(top_folder)
     if not dwg_files:
         raise RuntimeError(f"Khong co file DWG trong '{top_folder.name}'")
@@ -147,9 +147,17 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
     work_dir = Path(tempfile.mkdtemp())
     writer = PdfWriter()
     try:
+        log(f"  Dang convert {len(dwg_files)} file DWG sang DXF (ODA, mot lan)...")
+        dxf_dir = work_dir / "dxf"
+        convert_folder_to_dxf(top_folder, dxf_dir, oda_path)
+
         for dwg in dwg_files:
-            log(f"  Dang convert: {dwg.relative_to(top_folder)}")
-            dxf_path = convert_dwg_to_dxf(dwg, work_dir, oda_path)
+            rel = dwg.relative_to(top_folder)
+            dxf_path = dxf_dir / rel.with_suffix(".dxf")
+            if not dxf_path.exists():
+                log(f"  Bo qua (khong tao duoc DXF): {rel}")
+                continue
+            log(f"  Dang render PDF: {rel}")
             pdf_path = work_dir / (dwg.stem + ".pdf")
             dxf_to_pdf(dxf_path, pdf_path, page_w_in, page_h_in)
             reader = PdfReader(str(pdf_path))
