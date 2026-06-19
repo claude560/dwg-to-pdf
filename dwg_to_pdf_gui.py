@@ -11,7 +11,7 @@ Workflow:
 Requirements:
     - ODA File Converter installed (https://www.opendesign.com/guestfiles/oda_file_converter)
       -> used only to convert DWG to DXF (ODA does not export PDF directly).
-    - pip install tkinterdnd2 pypdf ezdxf matplotlib
+    - pip install tkinterdnd2 pypdf ezdxf pymupdf
 """
 import shutil
 import subprocess
@@ -28,13 +28,10 @@ except ImportError:
     HAS_DND = False
 
 import ezdxf
-from ezdxf import bbox
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from ezdxf.addons.drawing import RenderContext, Frontend
-from ezdxf.addons.drawing.matplotlib import MatplotlibBackend
+from ezdxf.addons.drawing.pymupdf import PyMuPdfBackend
 from ezdxf.addons.drawing.config import Configuration, ColorPolicy, BackgroundPolicy
+from ezdxf.addons.drawing.layout import Page, Margins, Settings, Units
 from pypdf import PdfReader, PdfWriter
 
 PAPER_SIZES_MM = {
@@ -45,17 +42,15 @@ PAPER_SIZES_MM = {
     "A4": (210, 297),
     "Letter": (215.9, 279.4),
 }
-MM_TO_IN = 1 / 25.4
 
 
-def paper_size_inches(name: str, landscape: bool) -> tuple[float, float]:
+def paper_size_mm(name: str, landscape: bool) -> tuple[float, float]:
     w_mm, h_mm = PAPER_SIZES_MM[name]
-    w_in, h_in = w_mm * MM_TO_IN, h_mm * MM_TO_IN
     if landscape:
-        w_in, h_in = max(w_in, h_in), min(w_in, h_in)
+        w_mm, h_mm = max(w_mm, h_mm), min(w_mm, h_mm)
     else:
-        w_in, h_in = min(w_in, h_in), max(w_in, h_in)
-    return w_in, h_in
+        w_mm, h_mm = min(w_mm, h_mm), max(w_mm, h_mm)
+    return w_mm, h_mm
 
 
 def find_oda_converter() -> str:
@@ -87,10 +82,23 @@ def convert_folder_to_dxf(top_folder: Path, output_dir: Path, oda_path: str) -> 
 
 
 MARGIN_MM = 3
-LINEWEIGHT_SCALING = 0.4
+
+# PyMuPdfBackend ve vector truc tiep (khong qua matplotlib) -> nhanh hon nhieu
+# voi ban ve nhieu doi tuong, va tu fit/can giua trong khung trang.
+RENDER_CONFIG = Configuration(
+    color_policy=ColorPolicy.BLACK,
+    background_policy=BackgroundPolicy.WHITE,
+    circle_approximation_count=32,
+    max_flattening_distance=0.1,
+)
+RENDER_SETTINGS = Settings(
+    fit_page=True,
+    min_stroke_width=0.05,
+    max_stroke_width=0.15,
+)
 
 
-def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_in: float, page_h_in: float) -> None:
+def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_mm: float, page_h_mm: float) -> None:
     doc = ezdxf.readfile(str(dxf_path))
     msp = doc.modelspace()
 
@@ -98,41 +106,13 @@ def dxf_to_pdf(dxf_path: Path, pdf_path: Path, page_w_in: float, page_h_in: floa
     for point in msp.query("POINT"):
         msp.delete_entity(point)
 
-    fig = plt.figure(figsize=(page_w_in, page_h_in))
-    # Chua mep giay MARGIN_MM o ca 4 canh.
-    margin_x = (MARGIN_MM * MM_TO_IN) / page_w_in
-    margin_y = (MARGIN_MM * MM_TO_IN) / page_h_in
-    ax = fig.add_axes([margin_x, margin_y, 1 - 2 * margin_x, 1 - 2 * margin_y])
-    ax.set_aspect("equal")
-    ax.axis("off")
-
-    # In trang den, net ve manh hon (dac biet net kich thuoc).
-    cfg = Configuration(
-        color_policy=ColorPolicy.BLACK,
-        background_policy=BackgroundPolicy.WHITE,
-        lineweight_scaling=LINEWEIGHT_SCALING,
-        min_lineweight=0.1,
-        circle_approximation_count=32,
-        max_flattening_distance=0.1,
-    )
+    backend = PyMuPdfBackend()
     ctx = RenderContext(doc)
-    backend = MatplotlibBackend(ax)
-    Frontend(ctx, backend, config=cfg).draw_layout(msp, finalize=True)
+    Frontend(ctx, backend, config=RENDER_CONFIG).draw_layout(msp, finalize=True)
 
-    # Fit ban ve kin kho giay theo gioi han thuc te cua ban ve.
-    try:
-        extents = bbox.extents(msp)
-        if extents.has_data:
-            min_x, min_y = extents.extmin.x, extents.extmin.y
-            max_x, max_y = extents.extmax.x, extents.extmax.y
-            ax.set_xlim(min_x, max_x)
-            ax.set_ylim(min_y, max_y)
-    except Exception:
-        pass
-    ax.margins(0)
-
-    fig.savefig(str(pdf_path), facecolor="white")
-    plt.close(fig)
+    page = Page(page_w_mm, page_h_mm, units=Units.mm, margins=Margins.all(MARGIN_MM))
+    pdf_bytes = backend.get_pdf_bytes(page, settings=RENDER_SETTINGS)
+    Path(pdf_path).write_bytes(pdf_bytes)
 
 
 def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool,
@@ -143,7 +123,7 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
     if not dwg_files:
         raise RuntimeError(f"Khong co file DWG trong '{top_folder.name}'")
 
-    page_w_in, page_h_in = paper_size_inches(paper, landscape)
+    page_w_mm, page_h_mm = paper_size_mm(paper, landscape)
     work_dir = Path(tempfile.mkdtemp())
     writer = PdfWriter()
     try:
@@ -159,7 +139,7 @@ def merge_folder(top_folder: Path, output_dir: Path, paper: str, landscape: bool
                 continue
             log(f"  Dang render PDF: {rel}")
             pdf_path = work_dir / (dwg.stem + ".pdf")
-            dxf_to_pdf(dxf_path, pdf_path, page_w_in, page_h_in)
+            dxf_to_pdf(dxf_path, pdf_path, page_w_mm, page_h_mm)
             reader = PdfReader(str(pdf_path))
             for page in reader.pages:
                 writer.add_page(page)
