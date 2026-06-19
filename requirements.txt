@@ -2,3 +2,4 @@ tkinterdnd2
 pypdf
 ezdxf
 pymupdf
+openpyxl
