@@ -43,6 +43,7 @@ CODE_TO_FOLDER = {
     "1PL": "Loose part", "1LP": "Loose part", "2LP": "Loose part",
     "1RF": "Rafter", "2RF": "Rafter",
     "1ST": "Strut tube", "2ST": "Strut tube",
+    "1SB": "STRUT BEAM", "2SB": "STRUT BEAM",
     "1VB": "V brace", "2VB": "V brace",
     "1RM": "Roof monitor", "2RM": "Roof monitor",
     "2SS": "Stringer",
