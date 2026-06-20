@@ -31,23 +31,23 @@ AUTHOR = "Le Chi Tam - Mp : 0918 785 009 - lct@luckysteel.vn"
 
 # Map ma "yyy" -> ten thu muc dich. Nhieu ma co the tro ve cung 1 thu muc.
 CODE_TO_FOLDER = {
-    "1BE": "Bend clip",
-    "1BK": "Bracket",
-    "1CA": "Canopy", "2CA": "Canopy",
-    "1CL": "Column", "2CL": "Column",
+    "1BE": "BEND CLIP",
+    "1BK": "BRACKET",
+    "1CA": "CANOPY", "2CA": "CANOPY",
+    "1CL": "COLUMN", "2CL": "COLUMN",
     "1CB": "CRANE BEAM", "2CB": "CRANE BEAM",
     "1FA": "FASCIA", "2FA": "FASCIA",
-    "1JB": "Jack beam",
-    "1MJ": "Mezz joist", "2MJ": "Mezz joist",
-    "1MB": "Mezz beam", "2MB": "Mezz beam",
-    "1PL": "Loose part", "1LP": "Loose part", "2LP": "Loose part",
-    "1RF": "Rafter", "2RF": "Rafter",
-    "1ST": "Strut tube", "2ST": "Strut tube",
+    "1JB": "JACK BEAM",
+    "1MJ": "MEZZ JOIST", "2MJ": "MEZZ JOIST",
+    "1MB": "MEZZ BEAM", "2MB": "MEZZ BEAM",
+    "1PL": "LOOSE PART", "1LP": "LOOSE PART", "2LP": "LOOSE PART",
+    "1RF": "RAFTER", "2RF": "RAFTER",
+    "1ST": "STRUT TUBE", "2ST": "STRUT TUBE",
     "1SB": "STRUT BEAM", "2SB": "STRUT BEAM",
-    "1VB": "V brace", "2VB": "V brace",
-    "1RM": "Roof monitor", "2RM": "Roof monitor",
-    "2SS": "Stringer",
-    "1LD": "Ladder", "2LD": "Ladder",
+    "1VB": "V BRACE", "2VB": "V BRACE",
+    "1RM": "ROOF MONITOR", "2RM": "ROOF MONITOR",
+    "2SS": "STRINGER",
+    "1LD": "LADDER", "2LD": "LADDER",
 }
 
 # Lay 3 ky tu ngay sau dau "_" dau tien.
