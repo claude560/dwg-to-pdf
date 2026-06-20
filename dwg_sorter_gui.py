@@ -27,7 +27,7 @@ try:
 except ImportError:
     HAS_DND = False
 
-AUTHOR = "Le Chi Tam - Mp : 0918 785 009 - lct@luckysteel.vn"
+AUTHOR = "Lê Chí Tâm - Mp : 0918 785 009 - lct@luckysteel.vn"
 
 # Map ma "yyy" -> ten thu muc dich. Nhieu ma co the tro ve cung 1 thu muc.
 CODE_TO_FOLDER = {
@@ -71,7 +71,7 @@ def sort_folder(d1: Path, log) -> dict:
     dwg_files = [p for p in d1.iterdir()
                  if p.is_file() and p.suffix.lower() == ".dwg"]
     if not dwg_files:
-        raise RuntimeError(f"Khong co file DWG nao truc tiep trong '{d1}'")
+        raise RuntimeError(f"Không có file DWG nào trực tiếp trong '{d1}'")
 
     moved = defaultdict(int)
     created_folders = set()
@@ -102,28 +102,28 @@ def sort_folder(d1: Path, log) -> dict:
         shutil.move(str(f), str(dest))
         moved[folder_name] += 1
 
-    # Bao cao
+    # Báo cáo
     log("=" * 50)
-    log(f"Thu muc xu ly: {d1}")
-    log(f"Tong so file DWG: {len(dwg_files)}")
+    log(f"Thư mục xử lý: {d1}")
+    log(f"Tổng số file DWG: {len(dwg_files)}")
     log("-" * 50)
     if created_folders:
-        log(f"Thu muc duoc TAO MOI ({len(created_folders)}): "
+        log(f"Thư mục được TẠO MỚI ({len(created_folders)}): "
             + ", ".join(sorted(created_folders)))
     else:
-        log("Khong co thu muc moi (tat ca da ton tai).")
+        log("Không có thư mục mới (tất cả đã tồn tại).")
     log("-" * 50)
-    log("Ket qua theo thu muc:")
+    log("Kết quả theo thư mục:")
     total_moved = 0
     for folder_name in sorted(moved):
         log(f"  {folder_name:<14}: {moved[folder_name]} file")
         total_moved += moved[folder_name]
     log("-" * 50)
-    log(f"Tong cong da move: {total_moved} file")
+    log(f"Tổng cộng đã chuyển: {total_moved} file")
     if skipped:
-        log(f"BO QUA {len(skipped)} file (khong nhan dien duoc ma):")
+        log(f"BỎ QUA {len(skipped)} file (không nhận diện được mã):")
         for name, code in skipped:
-            log(f"  '{name}'  (ma doc duoc: {code})")
+            log(f"  '{name}'  (mã đọc được: {code})")
     log("=" * 50)
     return dict(moved)
 
@@ -131,20 +131,20 @@ def sort_folder(d1: Path, log) -> dict:
 class App:
     def __init__(self, root):
         self.root = root
-        root.title("Sap xep file DWG theo loai cau kien")
+        root.title("Sắp xếp file DWG theo loại cấu kiện")
         root.geometry("680x560")
 
         top = ttk.Frame(root, padding=10)
         top.pack(fill="x")
 
-        ttk.Button(top, text="Chon thu muc...", command=self.browse).pack(side="left")
-        self.folder_var = tk.StringVar(value="(chua chon thu muc)")
+        ttk.Button(top, text="Chọn thư mục...", command=self.browse).pack(side="left")
+        self.folder_var = tk.StringVar(value="(chưa chọn thư mục)")
         ttk.Label(top, textvariable=self.folder_var, foreground="blue").pack(
             side="left", padx=10)
 
-        drop_text = ("Keo tha thu muc D1 vao day"
+        drop_text = ("Kéo thả thư mục D1 vào đây"
                      if HAS_DND else
-                     "Cai 'tkinterdnd2' de keo tha, hoac dung nut Chon thu muc")
+                     "Cài 'tkinterdnd2' để kéo thả, hoặc dùng nút Chọn thư mục")
         self.drop = tk.Label(root, text=drop_text, relief="ridge", bd=2,
                              height=4, bg="#eef", fg="#333")
         self.drop.pack(fill="x", padx=10, pady=8)
@@ -152,13 +152,13 @@ class App:
             self.drop.drop_target_register(DND_FILES)
             self.drop.dnd_bind("<<Drop>>", self.on_drop)
 
-        self.run_btn = ttk.Button(root, text="CHAY SAP XEP", command=self.run)
+        self.run_btn = ttk.Button(root, text="CHẠY SẮP XẾP", command=self.run)
         self.run_btn.pack(pady=4)
 
         self.log_box = scrolledtext.ScrolledText(root, height=20, font=("Consolas", 9))
         self.log_box.pack(fill="both", expand=True, padx=10, pady=6)
 
-        ttk.Label(root, text="Tac gia: " + AUTHOR, foreground="#555").pack(pady=4)
+        ttk.Label(root, text="Tác giả: " + AUTHOR, foreground="#555").pack(pady=4)
 
         self.folder = None
 
@@ -168,7 +168,7 @@ class App:
         self.root.update_idletasks()
 
     def browse(self):
-        path = filedialog.askdirectory(title="Chon thu muc D1")
+        path = filedialog.askdirectory(title="Chọn thư mục D1")
         if path:
             self.set_folder(Path(path))
 
@@ -181,7 +181,7 @@ class App:
         if path.is_dir():
             self.set_folder(path)
         else:
-            messagebox.showwarning("Loi", "Vui long tha mot THU MUC.")
+            messagebox.showwarning("Lỗi", "Vui lòng thả một THƯ MỤC.")
 
     def set_folder(self, path: Path):
         self.folder = path
@@ -189,7 +189,7 @@ class App:
 
     def run(self):
         if not self.folder:
-            messagebox.showwarning("Thieu thu muc", "Hay chon hoac keo tha thu muc D1.")
+            messagebox.showwarning("Thiếu thư mục", "Hãy chọn hoặc kéo thả thư mục D1.")
             return
         self.run_btn.config(state="disabled")
         self.log_box.delete("1.0", "end")
@@ -198,10 +198,10 @@ class App:
     def _run_thread(self):
         try:
             sort_folder(self.folder, self.log)
-            self.log("\nHOAN TAT.")
+            self.log("\nHOÀN TẤT.")
         except Exception as e:
-            self.log(f"\nLOI: {e}")
-            messagebox.showerror("Loi", str(e))
+            self.log(f"\nLỖI: {e}")
+            messagebox.showerror("Lỗi", str(e))
         finally:
             self.run_btn.config(state="normal")
 
