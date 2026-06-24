@@ -14,9 +14,15 @@ from datetime import date
 from pathlib import Path
 
 # Secret key dung de ky/xac thuc license. PHAI giong nhau giua license_admin.py
-# va ung dung (dwg_sorter_gui.py). Doi gia tri nay neu muon "reset" toan bo
-# license cu da phat hanh (vd lo secret).
-SECRET_KEY = b"LuckySteel-2026-PEB-DwgSorter-License-Key-v1"
+# va ung dung (dwg_sorter_gui.py). Doi cac manh _K1.._K5 nay neu muon "reset"
+# toan bo license cu da phat hanh (vd lo secret). Chia nho + dao thu tu khi
+# ghep, de khong hien thanh 1 chuoi ro nghia khi mo file .exe bang text editor.
+_K1 = b"kS9p"
+_K2 = b"-Lu"
+_K3 = b"ckySte"
+_K4 = b"el-PEB-"
+_K5 = b"x7Qz2026!"
+SECRET_KEY = _K3 + _K1 + _K2 + _K5 + _K4[::-1]
 
 
 def _canonical(data: dict) -> bytes:
