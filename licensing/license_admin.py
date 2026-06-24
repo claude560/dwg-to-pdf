@@ -46,6 +46,8 @@ def main():
 
     existing_path = input("Duong dan file license.lic [Enter = ./license.lic]: ").strip()
     out_path = Path(existing_path) if existing_path else Path("license.lic")
+    if out_path.is_dir():
+        out_path = out_path / "license.lic"
 
     existing_ids = []
     if out_path.exists():
