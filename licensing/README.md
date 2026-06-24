@@ -15,6 +15,17 @@ serial o cung) va thoi han su dung (ngay het han). Ap dung cho `dwg_sorter_gui.p
 4. Gui file `license.lic` vua tao cho nguoi dung, yeu cau chep vao **CUNG thu
    muc** voi `DWG_Sorter.exe`.
 
+## Build exe (chong dich nguoc)
+
+Dung `build_sorter_exe_nuitka.bat` (khong dung `build_sorter_exe.bat` -
+PyInstaller - nua) de build `DWG_Sorter.exe`. Nuitka bien dich code Python
+(gom ca phan kiem tra license) thanh C/C++ roi compile ra may binary thuc su,
+kho dich nguoc lai ra source hon nhieu so voi PyInstaller (PyInstaller chi
+dong goi nguyen file `.pyc`, de decompile bang cong cu nhu `uncompyle6`).
+
+Lan build dau co the cham va se tu dong tai trinh bien dich C (MinGW64) neu
+may chua co - cu xac nhan Y/Enter khi duoc hoi.
+
 ## Luu y
 
 - `license.lic` KHONG duoc dong goi vao file exe - de co the cap/sua quyen ma
