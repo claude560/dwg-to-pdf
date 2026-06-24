@@ -36,8 +36,9 @@ from licensing.machine_id import get_machine_id  # noqa: E402
 AUTHOR = "Lê Chí Tâm - Mp : 0918 785 009 - lct@luckysteel.vn"
 
 # Thu muc chua file .exe (hoac .py khi chay truc tiep) - license.lic phai
-# nam CUNG thu muc nay.
-if getattr(sys, "frozen", False):
+# nam CUNG thu muc nay. sys.frozen la dau hieu cua PyInstaller; "__compiled__"
+# la dau hieu cua Nuitka - can check ca hai.
+if getattr(sys, "frozen", False) or "__compiled__" in globals():
     APP_DIR = Path(sys.executable).resolve().parent
 else:
     APP_DIR = Path(__file__).resolve().parent
