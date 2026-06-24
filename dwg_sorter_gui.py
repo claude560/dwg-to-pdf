@@ -35,14 +35,48 @@ from licensing.machine_id import get_machine_id  # noqa: E402
 
 AUTHOR = "Lê Chí Tâm - Mp : 0918 785 009 - lct@luckysteel.vn"
 
-# Thu muc chua file .exe (hoac .py khi chay truc tiep) - license.lic phai
-# nam CUNG thu muc nay. sys.frozen la dau hieu cua PyInstaller; "__compiled__"
-# la dau hieu cua Nuitka - can check ca hai.
-if getattr(sys, "frozen", False) or "__compiled__" in globals():
-    APP_DIR = Path(sys.executable).resolve().parent
-else:
-    APP_DIR = Path(__file__).resolve().parent
-LICENSE_PATH = APP_DIR / "license.lic"
+def _license_search_dirs() -> list[Path]:
+    """Cac thu muc co the chua license.lic, theo thu tu uu tien.
+
+    Voi Nuitka onefile, sys.executable / __file__ co the tro vao thu muc TAM
+    luc giai nen, khong phai thu muc chua DWG_Sorter.exe that. sys.argv[0]
+    moi tro dung file exe nguoi dung bam chay -> uu tien no. Them cwd va cac
+    duong dan khac de chac chan tim ra file ke ben exe.
+    """
+    dirs: list[Path] = []
+
+    def _add(p: Path) -> None:
+        try:
+            rp = p.resolve()
+        except Exception:
+            return
+        if rp not in dirs:
+            dirs.append(rp)
+
+    # 1. Thu muc chua file exe nguoi dung bam chay (dung nhat cho onefile).
+    if sys.argv and sys.argv[0]:
+        _add(Path(sys.argv[0]).parent)
+    # 2. Thu muc chua binary (PyInstaller, hoac Nuitka standalone).
+    if getattr(sys, "frozen", False) or "__compiled__" in globals():
+        _add(Path(sys.executable).parent)
+    # 3. Thu muc nguon (khi chay truc tiep .py).
+    _add(Path(__file__).parent)
+    # 4. Thu muc lam viec hien hanh.
+    _add(Path.cwd())
+    return dirs
+
+
+def _find_license() -> Path:
+    """Tra ve duong dan license.lic dau tien ton tai; neu khong co, tra ve
+    ung vien dau tien (de thong bao loi hien duong dan hop ly)."""
+    candidates = [d / "license.lic" for d in _license_search_dirs()]
+    for c in candidates:
+        if c.exists():
+            return c
+    return candidates[0]
+
+
+LICENSE_PATH = _find_license()
 
 # Map ma "yyy" (chi gom ky tu chu, da bo so) -> ten thu muc dich.
 CODE_TO_FOLDER = {
