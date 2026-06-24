@@ -5,8 +5,9 @@ Tac gia : Le Chi Tam - Mp : 0918 785 009 - lct@luckysteel.vn
 
 Cach dung:
     - Chon thu muc D1 (nut "Chon thu muc") hoac keo tha thu muc vao cua so.
-    - Voi moi file ten dang  A-xxx_yyyzzz - REV bb.dwg, lay 3 ky tu "yyy"
-      lien ke ngay sau dau "_" de quyet dinh thu muc dich.
+    - Voi moi file ten dang  A-xxx_yyyzzz - REV bb.dwg, lay chuoi nam giua
+      dau "_" va dau "-" ke tiep, bo het ky tu so (0-9), chi giu ky tu chu
+      (string) -> goi la "yyy", dung de quyet dinh thu muc dich.
     - Move file vao thu muc con tuong ung (tao thu muc neu chua co).
     - Bao cao: cac thu muc duoc tao, so file dwg trong moi thu muc.
 
@@ -29,38 +30,53 @@ except ImportError:
 
 AUTHOR = "Lê Chí Tâm - Mp : 0918 785 009 - lct@luckysteel.vn"
 
-# Map ma "yyy" -> ten thu muc dich. Nhieu ma co the tro ve cung 1 thu muc.
+# Map ma "yyy" (chi gom ky tu chu, da bo so) -> ten thu muc dich.
 CODE_TO_FOLDER = {
-    "1BE": "BEND CLIP",
-    "1BK": "BRACKET",
-    "1CA": "CANOPY", "2CA": "CANOPY",
-    "1CL": "COLUMN", "2CL": "COLUMN",
-    "1CB": "CRANE BEAM", "2CB": "CRANE BEAM",
-    "1FA": "FASCIA", "2FA": "FASCIA",
-    "1JB": "JACK BEAM",
-    "1MJ": "MEZZ JOIST", "2MJ": "MEZZ JOIST",
-    "1MB": "MEZZ BEAM", "2MB": "MEZZ BEAM",
-    "1PL": "LOOSE PART", "1LP": "LOOSE PART", "2LP": "LOOSE PART",
-    "1RF": "RAFTER", "2RF": "RAFTER",
-    "1ST": "STRUT TUBE", "2ST": "STRUT TUBE",
-    "1SB": "STRUT BEAM", "2SB": "STRUT BEAM",
-    "1VB": "V BRACE", "2VB": "V BRACE",
-    "1RM": "ROOF MONITOR", "2RM": "ROOF MONITOR",
-    "2SS": "STRINGER",
-    "1LD": "LADDER", "2LD": "LADDER",
+    "BE": "BEND CLIP",
+    "BK": "BRACKET",
+    "CA": "CANOPY",
+    "CL": "COLUMN",
+    "CB": "CRANE BEAM",
+    "FA": "FASCIA",
+    "JB": "JACK BEAM",
+    "MJ": "MEZZ JOIST",
+    "MB": "MEZZ BEAM",
+    "PL": "LOOSE PART", "LP": "LOOSE PART",
+    "RF": "RAFTER",
+    "ST": "STRUT TUBE",
+    "VB": "V BRACE",
+    "RM": "ROOF MONITOR",
+    "SS": "STRINGER",
+    "LD": "LADDER",
+    "SB": "STRUT BEAM",
+    "F": "FLANGE",
+    "H": "HOT-ROLL", "L": "HOT-ROLL", "V": "HOT-ROLL",
+    "T": "HOT-ROLL", "U": "HOT-ROLL", "P": "HOT-ROLL",
+    "E": "PLATE", "EH": "PLATE", "S": "PLATE", "SH": "PLATE", "BP": "PLATE",
+    "W": "WEB", "WT": "WEB", "WC": "WEB",
+    "CK": "CHECKER",
+    "PU": "PURLIN",
+    "GT": "GIRT",
+    "SA": "BEND GALVANISE", "AS": "BEND GALVANISE",
+    "AC": "BEND GALVANISE", "BG": "BEND GALVANISE",
 }
 
-# Lay 3 ky tu ngay sau dau "_" dau tien.
-CODE_RE = re.compile(r"_(...)")
+# Chuoi nam giua dau "_" dau tien va dau "-" ke tiep.
+CODE_RE = re.compile(r"_([^-]*)-")
 
 
 def extract_code(filename: str) -> str | None:
-    """Tra ve 3 ky tu "yyy" ngay sau dau '_' dau tien, hoac None neu khong khop."""
-    stem = Path(filename).stem
-    m = CODE_RE.search(stem)
+    """Tra ve "yyy": chuoi giua '_' va '-' ke tiep, sau khi bo het ky tu so.
+
+    Vd "A-101_1BE001 - REV 00.dwg" -> phan giua la "1BE001 " -> bo so -> "BE".
+    Tra ve None neu khong tim thay dau '_'/'-' theo dung thu tu, hoac phan
+    con lai sau khi bo so la rong.
+    """
+    m = CODE_RE.search(filename)
     if not m:
         return None
-    return m.group(1).upper()
+    letters_only = re.sub(r"[0-9]", "", m.group(1)).strip()
+    return letters_only.upper() if letters_only else None
 
 
 def sort_folder(d1: Path, log) -> dict:
@@ -116,7 +132,7 @@ def sort_folder(d1: Path, log) -> dict:
     log("Kết quả theo thư mục:")
     total_moved = 0
     for folder_name in sorted(moved):
-        log(f"  {folder_name:<14}: {moved[folder_name]} file")
+        log(f"  {folder_name:<18}: {moved[folder_name]} file")
         total_moved += moved[folder_name]
     log("-" * 50)
     log(f"Tổng cộng đã chuyển: {total_moved} file")
