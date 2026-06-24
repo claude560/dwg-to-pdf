@@ -16,4 +16,7 @@ pyinstaller --noconfirm --clean build_sorter_exe.spec
 
 echo.
 echo Xong! File exe nam tai: dist\DWG_Sorter.exe
+echo.
+echo QUAN TRONG: Phai chep file license.lic vao CUNG thu muc voi DWG_Sorter.exe
+echo (xem licensing\license_admin.py de tao file license.lic).
 pause

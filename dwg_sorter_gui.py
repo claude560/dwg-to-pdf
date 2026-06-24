@@ -16,6 +16,7 @@ Cai dat (tuy chon, de keo tha):  pip install tkinterdnd2
 import os
 import re
 import shutil
+import sys
 import threading
 import tkinter as tk
 from collections import defaultdict
@@ -28,7 +29,19 @@ try:
 except ImportError:
     HAS_DND = False
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from licensing.license_core import check_license  # noqa: E402
+from licensing.machine_id import get_machine_id  # noqa: E402
+
 AUTHOR = "Lê Chí Tâm - Mp : 0918 785 009 - lct@luckysteel.vn"
+
+# Thu muc chua file .exe (hoac .py khi chay truc tiep) - license.lic phai
+# nam CUNG thu muc nay.
+if getattr(sys, "frozen", False):
+    APP_DIR = Path(sys.executable).resolve().parent
+else:
+    APP_DIR = Path(__file__).resolve().parent
+LICENSE_PATH = APP_DIR / "license.lic"
 
 # Map ma "yyy" (chi gom ky tu chu, da bo so) -> ten thu muc dich.
 CODE_TO_FOLDER = {
@@ -223,6 +236,15 @@ class App:
 
 
 def main():
+    machine_id = get_machine_id()
+    ok, msg = check_license(LICENSE_PATH, machine_id)
+    if not ok:
+        root = tk.Tk()
+        root.withdraw()
+        messagebox.showerror("Khong the chay phan mem", msg)
+        root.destroy()
+        sys.exit(1)
+
     root = TkinterDnD.Tk() if HAS_DND else tk.Tk()
     App(root)
     root.mainloop()
